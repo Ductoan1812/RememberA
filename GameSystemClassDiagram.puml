@@ -1,0 +1,908 @@
+@startuml Game System Class Diagram
+!theme aws-orange
+skinparam linetype polyline
+skinparam groupInheritance 3
+
+title **Game 2D Top-Down - Complete System Architecture**\n**Current System + Future Extensions**
+
+' ============================================================================
+' CORE ENUMERATIONS & DATA TYPES
+' ============================================================================
+package "Core Data Types" as CoreData {
+    enum StatCategory {
+        Survival
+        Cultivation
+        Combat
+        Special
+        Extended
+    }
+    
+    enum StatFlags {
+        None
+        ResourceMax
+        ResourceCurrent
+        Percentage
+        Derived
+    }
+    
+    enum StatId {
+        KhiHuyetMax
+        KhiHuyet
+        LinhLucMax
+        LinhLuc
+        ThoNguyenMax
+        ThoNguyen
+        TuVi
+        DaoHanh
+        CongVatLy
+        PhongVatLy
+        TocDo
+        ...
+    }
+    
+    enum ItemCategory {
+        weapon
+        armor
+        consumable
+        material
+        ...
+    }
+    
+    enum Rarity {
+        pham
+        hoang
+        huyen
+        dia
+        thien
+        tien
+        than
+    }
+    
+    enum Element {
+        none
+        kim
+        moc
+        thuy
+        hoa
+        tho
+        loi
+        am
+        duong
+    }
+    
+    enum Realm {
+        PhamNhan
+        luyen_khi
+        truc_co
+        kim_dan
+        ...
+    }
+}
+
+' ============================================================================
+' STAT SYSTEM
+' ============================================================================
+package "Stat System" as StatSystem {
+    class "StatEntry" {
+        +StatId id
+        +float baseValue
+        +float GetFinal()
+        +void AddBonus(StatBonus bonus)
+        +void RemoveBonus(StatBonus bonus)
+    }
+    
+    class "StatCollection" {
+        -Dictionary<StatId, StatEntry> stats
+        +event Action<StatId, float> OnFinalChanged
+        +float GetStat(StatId id)
+        +void SetBaseStat(StatId id, float value)
+        +void AddBonus(StatBonus bonus)
+        +void RemoveBonus(StatBonus bonus)
+        +void RecalculateAll()
+    }
+    
+    class "StatBonus" {
+        +StatId statId
+        +float value
+        +BonusType type
+        +string sourceId
+        +int priority
+    }
+    
+    class "StatMetaAttribute" {
+        +StatCategory Category
+        +string DisplayName
+        +StatFlags Flags
+    }
+    
+    class "StatUiMapper" {
+        +string GetDisplayName(StatId id)
+        +StatCategory GetCategory(StatId id)
+        +bool HasFlag(StatId id, StatFlags flag)
+    }
+}
+
+' ============================================================================
+' ITEM SYSTEM
+' ============================================================================
+package "Item System" as ItemSystem {
+    class "ItemData" {
+        +string id
+        +string name
+        +ItemCategory category
+        +Rarity rarity
+        +Element element
+        +Realm realmRequirement
+        +int level
+        +int maxStack
+        +BaseStats baseStats
+        +int sockets
+        +AffixEntry[] affixes
+        +UseEffect useEffect
+        +string flavor
+        +string addressIcon
+        +string addressTexture
+        +void LogDetail()
+    }
+    
+    class "BaseStats" {
+        +float atk
+        +float defense
+        +float hp
+        +float qi
+        +float moveSpd
+        +float critRate
+        +float critDmg
+        +float penetration
+        +float lifestealQi
+        +Resist res
+    }
+    
+    class "AffixEntry" {
+        +string id
+        +float value
+        +int tier
+    }
+    
+    class "UseEffect" {
+        +string type
+        +float magnitude
+        +float duration
+        +string spellId
+    }
+    
+    class "InventoryItem" {
+        +int Slot
+        +int quantity
+        +List<StatBonus> statBonuses
+    }
+    
+    class "ItemDatabaseSO" {
+        +ItemData[] items
+        +ItemData GetItemById(string id)
+        +ItemData[] GetItemsByCategory(ItemCategory category)
+        +ItemData[] GetItemsByRarity(Rarity rarity)
+    }
+    
+    class "ItemManager" {
+        +static ItemManager Instance
+        +ItemDatabaseSO database
+        +ItemData CreateItem(string id)
+        +void LoadItemDatabase()
+    }
+    
+    class "WordItem" {
+        +ItemData itemData
+        +Transform transform
+        +SpriteRenderer spriteRenderer
+        +void Initialize(ItemData data)
+        +void OnPickup()
+    }
+}
+
+' ============================================================================
+' PLAYER SYSTEM
+' ============================================================================
+package "Player System" as PlayerSystem {
+    class "PlayerManager" {
+        +static PlayerManager Instance
+        -string playerId
+        -PlayerData currentPlayerData
+        +event Action<PlayerData> OnPlayerDataLoaded
+        +PlayerData Data
+        +void LoadPlayer(string newId)
+        +void SavePlayer()
+    }
+    
+    class "PlayerData" {
+        +string playerId
+        +int level
+        +int exp
+        +StatCollection stats
+        +List<InventoryItem> inventory
+        +EquipmentData equipment
+        +Vector3 position
+        +string currentScene
+    }
+    
+    class "PlayerControler" {
+        +float moveSpeed
+        -PlayerStatsManager stats
+        -PlayerInput playerInput
+        -Rigidbody2D rb
+        +void FixedUpdate()
+    }
+    
+    class "PlayerInput" {
+        +Vector2 MoveInput
+        +bool AttackL
+        +bool AttackR
+        +bool Dash
+        +bool Interact
+        +bool Menu
+    }
+    
+    class "PlayerStatsManager" {
+        +int Level
+        +event UnityEvent onStatsRecalculated
+        -PlayerData cachedData
+        +float moveSpd
+        +float atk
+        +float defense
+        +float hp
+        +float critRate
+        +void OnPlayerDataLoaded(PlayerData data)
+        +void ClampCurrent(PlayerData data, StatId current, StatId max)
+    }
+    
+    class "PlayerAttack" {
+        +float attackRadius
+        +float attackCooldown
+        +LayerMask enemyLayer
+        +bool requireFacing
+        -PlayerInput input
+        -PlayerStatsManager statsMgr
+        -float lastAttackTime
+        +void PerformAttack()
+    }
+    
+    class "PlayerAnimation" {
+        -Animator animator
+        -PlayerInput input
+        +void UpdateAnimations()
+        +void TriggerAttack()
+    }
+    
+    class "PlayerInventory" {
+        +int maxSlots
+        +List<InventoryItem> items
+        +bool AddItem(ItemData item, int quantity)
+        +bool RemoveItem(string itemId, int quantity)
+        +InventoryItem GetItem(int slot)
+    }
+    
+    class "PlayerEquitment" {
+        +Dictionary<EquipmentSlot, InventoryItem> equippedItems
+        +bool EquipItem(InventoryItem item)
+        +bool UnequipItem(EquipmentSlot slot)
+        +List<StatBonus> GetEquipmentBonuses()
+    }
+    
+    class "InventoryService" {
+        +static InventoryService Instance
+        +event Action<IReadOnlyList<InventoryItem>> OnInventoryChanged
+        +event Action<EquipmentSlot, InventoryItem> OnEquipmentChanged
+        +bool TryAddItem(ItemData item, int quantity)
+        +bool TryRemoveItem(string itemId, int quantity)
+        +bool TryEquipItem(InventoryItem item)
+    }
+}
+
+' ============================================================================
+' ENEMY SYSTEM
+' ============================================================================
+package "Enemy System" as EnemySystem {
+    class "EnemyControler" {
+        +float patrolRadius
+        +float walkSpeed
+        +float runSpeed
+        +float chaseRadius
+        +float keepDistance
+        +LayerMask playerLayer
+        -Rigidbody2D rb
+        -Vector2 spawnPos
+        -Vector2 moveDir
+        -bool isChasing
+        +void FixedUpdate()
+        +void HandlePatrol(Vector2 pos)
+    }
+    
+    class "EnemyInputAi" {
+        +float detectionRadius
+        +float attackRange
+        +LayerMask targetLayer
+        +Vector2 GetMovementInput()
+        +bool ShouldAttack()
+        +Transform GetTarget()
+    }
+    
+    class "EnemyStats" {
+        +float maxHealth
+        +float currentHealth
+        +float attack
+        +float defense
+        +float moveSpeed
+        +bool IsDead
+        +void TakeDamage(float damage)
+        +void Heal(float amount)
+    }
+    
+    class "EnemyAttack" {
+        +float attackRadius
+        +float attackCooldown
+        +float attackDamage
+        +LayerMask targetLayer
+        -float lastAttackTime
+        +void PerformAttack()
+    }
+    
+    class "EnemyAnimation" {
+        -Animator animator
+        -EnemyControler controller
+        +void UpdateMovementAnimation()
+        +void TriggerAttack()
+        +void TriggerDeath()
+    }
+    
+    class "EnemyDamageTracker" {
+        +Dictionary<string, float> damageContributions
+        +void RecordDamage(string sourceId, float damage)
+        +string GetTopDamageDealer()
+        +void ResetDamage()
+    }
+    
+    class "EnemyDeathHandler" {
+        +ItemDropManager dropManager
+        +void OnDeath()
+        +void DropItems()
+        +void GiveExperience()
+    }
+    
+    class "EnemyUI" {
+        +Canvas healthBarCanvas
+        +Slider healthBar
+        +void UpdateHealthBar(float current, float max)
+        +void ShowDamageText(float damage)
+    }
+}
+
+' ============================================================================
+' COMBAT SYSTEM
+' ============================================================================
+package "Combat System" as CombatSystem {
+    interface "IDamageable" {
+        +bool ApplyDamage(DamageContext ctx)
+        +bool IsDead
+    }
+    
+    class "DamageContext" {
+        +float baseDamage
+        +float finalDamage
+        +DamageType type
+        +GameObject source
+        +GameObject target
+        +bool isCritical
+        +Element element
+        +Vector3 hitPoint
+        +Vector3 hitDirection
+    }
+    
+    class "DamageSnapshot" {
+        +float damage
+        +bool isCritical
+        +string sourceId
+        +string targetId
+        +float timestamp
+    }
+    
+    class "CombatCalculator" {
+        +static float CalculateDamage(float baseDamage, float attack, float defense)
+        +static bool RollCritical(float critRate)
+        +static float ApplyCriticalMultiplier(float damage, float critMultiplier)
+        +static float ApplyElementalModifier(float damage, Element attackElement, Element defenseElement)
+    }
+    
+    class "FloatingCombatText" {
+        +Text damageText
+        +float duration
+        +AnimationCurve moveCurve
+        +void Initialize(float damage, bool isCritical)
+        +void PlayAnimation()
+    }
+    
+    class "FloatingCombatTextSpawner" {
+        +GameObject textPrefab
+        +Transform canvas
+        +void SpawnDamageText(Vector3 position, float damage, bool isCritical)
+    }
+}
+
+' ============================================================================
+' UI SYSTEM
+' ============================================================================
+package "UI System" as UISystem {
+    class "UIManager" {
+        +static UIManager Instance
+        +GameObject controllerPanel
+        +GameObject menuPanel
+        +GameObject inventoryPanel
+        +GameObject equipmentPanel
+        +GameObject infoItemPanel
+        +GameObject infoPlayerPanel
+        +PanelMapping[] panelMappings
+        +void ShowController()
+        +void ToggleMenu()
+        +void ShowPanel(string key)
+    }
+    
+    class "InventoryUIManager" {
+        +PlayerInventory playerInventory
+        +Transform gridRoot
+        +SlotItem slotPrefab
+        +bool autoBuildOnStart
+        -List<SlotItem> slots
+        +void RefreshFromCurrentData()
+        +void HandleInventoryChanged(IReadOnlyList<InventoryItem> items)
+        +void RebuildFromData(PlayerData data)
+    }
+    
+    class "SlotItem" {
+        +Image itemIcon
+        +Text quantityText
+        +Button slotButton
+        +InventoryItem currentItem
+        +int slotIndex
+        +void SetItem(InventoryItem item)
+        +void OnSlotClick()
+        +void OnBeginDrag()
+        +void OnEndDrag()
+    }
+    
+    class "EquipmentUIManager" {
+        +Transform equipmentSlotsParent
+        +SlotItem[] equipmentSlots
+        +void UpdateEquipmentDisplay()
+        +void OnEquipmentSlotClick(EquipmentSlot slot)
+    }
+    
+    class "InfoItem" {
+        +Text itemName
+        +Text itemDescription
+        +Text itemStats
+        +Image itemIcon
+        +void DisplayItem(ItemData item)
+        +void Hide()
+    }
+    
+    class "MenuToggleKey" {
+        +KeyCode toggleKey
+        +string panelKey
+        +void Update()
+        +void OnToggle()
+    }
+    
+    class "TabShiftToggle" {
+        +void OnTabPressed()
+        +void ShiftToNextPanel()
+    }
+}
+
+' ============================================================================
+' WORLD & SCENE SYSTEM
+' ============================================================================
+package "World System" as WorldSystem {
+    class "ItemDropManager" {
+        +static ItemDropManager Instance
+        +GameObject itemDropPrefab
+        +void DropItem(ItemData item, Vector3 position, int quantity)
+        +void DropRandomItems(Vector3 position, DropTable dropTable)
+    }
+    
+    class "DropTable" {
+        +DropEntry[] entries
+        +ItemData[] GetRandomDrops()
+    }
+    
+    class "DropEntry" {
+        +ItemData item
+        +float dropChance
+        +int minQuantity
+        +int maxQuantity
+    }
+    
+    class "SceneTransition" {
+        +string targetScene
+        +Vector3 spawnPosition
+        +void LoadScene()
+        +void SavePlayerPosition()
+    }
+}
+
+' ============================================================================
+' FUTURE EXTENSIONS - ANIMATION SYSTEM
+' ============================================================================
+package "Animation System (Future)" as AnimationSystem #LightBlue {
+    class "AnimationEventManager" {
+        +static AnimationEventManager Instance
+        +event Action<string, AnimationEvent> OnAnimationEvent
+        +void RegisterListener(string eventName, Action<AnimationEvent> callback)
+        +void TriggerEvent(string eventName, AnimationEvent eventData)
+    }
+    
+    class "CombatAnimationEvents" {
+        +PlayerAttack playerAttack
+        +EnemyAttack enemyAttack
+        +void OnAttackStart()
+        +void OnAttackHit()
+        +void OnAttackEnd()
+        +void OnComboWindow()
+    }
+    
+    class "AnimationStateMachine" {
+        +Animator animator
+        +Dictionary<string, AnimationClip> animations
+        +void PlayAnimation(string animName, bool interrupt)
+        +void SetAnimationSpeed(float speed)
+        +bool IsAnimationPlaying(string animName)
+    }
+    
+    class "SkillAnimationController" {
+        +AnimationClip[] skillAnimations
+        +ParticleSystem[] skillEffects
+        +void PlaySkillAnimation(string skillId)
+        +void OnSkillAnimationEvent(string eventName)
+    }
+}
+
+' ============================================================================
+' FUTURE EXTENSIONS - AUDIO SYSTEM
+' ============================================================================
+package "Audio System (Future)" as AudioSystem #LightGreen {
+    class "AudioManager" {
+        +static AudioManager Instance
+        +AudioSource musicSource
+        +AudioSource sfxSource
+        +AudioClip[] musicTracks
+        +AudioClip[] sfxClips
+        +float masterVolume
+        +float musicVolume
+        +float sfxVolume
+        +void PlayMusic(string trackName, bool loop)
+        +void PlaySFX(string clipName, Vector3 position)
+        +void StopMusic()
+        +void SetVolume(AudioType type, float volume)
+    }
+    
+    class "AudioEvent" {
+        +string eventName
+        +AudioClip[] clips
+        +float volume
+        +float pitch
+        +bool randomizePitch
+        +void Play(Vector3 position)
+    }
+    
+    class "CombatAudioHandler" {
+        +AudioEvent attackSounds
+        +AudioEvent hitSounds
+        +AudioEvent criticalHitSounds
+        +AudioEvent deathSounds
+        +void OnAttack(DamageContext context)
+        +void OnHit(DamageContext context)
+        +void OnDeath(GameObject target)
+    }
+    
+    class "UIAudioHandler" {
+        +AudioEvent buttonClickSound
+        +AudioEvent itemPickupSound
+        +AudioEvent equipSound
+        +AudioEvent errorSound
+        +void OnButtonClick()
+        +void OnItemInteraction(string interactionType)
+    }
+}
+
+' ============================================================================
+' FUTURE EXTENSIONS - QUEST SYSTEM
+' ============================================================================
+package "Quest System (Future)" as QuestSystem #LightYellow {
+    class "QuestManager" {
+        +static QuestManager Instance
+        +List<Quest> activeQuests
+        +List<Quest> completedQuests
+        +event Action<Quest> OnQuestStarted
+        +event Action<Quest> OnQuestCompleted
+        +event Action<Quest> OnQuestUpdated
+        +void StartQuest(string questId)
+        +void CompleteQuest(string questId)
+        +void UpdateQuestProgress(string questId, string objectiveId, int progress)
+    }
+    
+    class "Quest" {
+        +string id
+        +string title
+        +string description
+        +QuestType type
+        +QuestStatus status
+        +List<QuestObjective> objectives
+        +QuestReward[] rewards
+        +Quest[] prerequisites
+        +bool IsCompleted
+        +void CheckCompletion()
+    }
+    
+    class "QuestObjective" {
+        +string id
+        +string description
+        +ObjectiveType type
+        +int currentProgress
+        +int targetProgress
+        +bool isCompleted
+        +void UpdateProgress(int amount)
+    }
+    
+    class "QuestReward" {
+        +RewardType type
+        +string itemId
+        +int quantity
+        +int experience
+        +void GiveReward(PlayerData player)
+    }
+    
+    class "QuestGiver" {
+        +string npcId
+        +Quest[] availableQuests
+        +void InteractWithPlayer()
+        +Quest[] GetAvailableQuests()
+    }
+    
+    class "QuestUI" {
+        +Transform questListParent
+        +GameObject questEntryPrefab
+        +void UpdateQuestList()
+        +void ShowQuestDetails(Quest quest)
+    }
+}
+
+' ============================================================================
+' FUTURE EXTENSIONS - SKILL SYSTEM
+' ============================================================================
+package "Skill System (Future)" as SkillSystem #LightCoral {
+    class "SkillManager" {
+        +static SkillManager Instance
+        +Dictionary<string, Skill> skills
+        +Dictionary<string, SkillTree> skillTrees
+        +event Action<Skill> OnSkillLearned
+        +event Action<Skill> OnSkillUpgraded
+        +bool LearnSkill(string skillId)
+        +bool UpgradeSkill(string skillId)
+        +bool CanLearnSkill(string skillId)
+    }
+    
+    class "Skill" {
+        +string id
+        +string name
+        +string description
+        +SkillType type
+        +int currentLevel
+        +int maxLevel
+        +SkillCost[] costs
+        +SkillEffect[] effects
+        +Skill[] prerequisites
+        +AnimationClip animation
+        +bool CanUpgrade()
+        +void Use(GameObject caster, GameObject target)
+    }
+    
+    class "SkillTree" {
+        +string id
+        +string name
+        +SkillNode[] nodes
+        +SkillNode GetNode(string skillId)
+        +SkillNode[] GetAvailableNodes()
+    }
+    
+    class "SkillNode" {
+        +Skill skill
+        +Vector2 position
+        +SkillNode[] connections
+        +bool isUnlocked
+        +bool IsAvailable()
+    }
+    
+    class "SkillEffect" {
+        +EffectType type
+        +float magnitude
+        +float duration
+        +StatId[] affectedStats
+        +void Apply(GameObject target)
+    }
+    
+    class "SkillCooldownManager" {
+        +Dictionary<string, float> cooldowns
+        +bool IsSkillReady(string skillId)
+        +void StartCooldown(string skillId, float duration)
+        +float GetRemainingCooldown(string skillId)
+    }
+}
+
+' ============================================================================
+' FUTURE EXTENSIONS - PERFORMANCE SYSTEM
+' ============================================================================
+package "Performance System (Future)" as PerformanceSystem #Lavender {
+    class "ObjectPoolManager" {
+        +static ObjectPoolManager Instance
+        +Dictionary<string, ObjectPool> pools
+        +void CreatePool(string poolId, GameObject prefab, int initialSize)
+        +GameObject GetFromPool(string poolId)
+        +void ReturnToPool(string poolId, GameObject obj)
+    }
+    
+    class "ObjectPool" {
+        +string poolId
+        +GameObject prefab
+        +Queue<GameObject> availableObjects
+        +HashSet<GameObject> activeObjects
+        +int maxSize
+        +GameObject Get()
+        +void Return(GameObject obj)
+        +void Expand(int count)
+    }
+    
+    class "EffectPooler" {
+        +ObjectPool damageTextPool
+        +ObjectPool particleEffectPool
+        +ObjectPool projectilePool
+        +void SpawnEffect(string effectId, Vector3 position)
+        +void ReturnEffect(GameObject effect, float delay)
+    }
+    
+    class "EnemyPooler" {
+        +ObjectPool[] enemyPools
+        +void SpawnEnemy(string enemyType, Vector3 position)
+        +void ReturnEnemy(GameObject enemy)
+        +void PrewarmPools()
+    }
+    
+    class "PerformanceMonitor" {
+        +static PerformanceMonitor Instance
+        +float fps
+        +int drawCalls
+        +long memoryUsage
+        +int activeGameObjects
+        +void Update()
+        +void LogPerformanceStats()
+    }
+}
+
+' ============================================================================
+' RELATIONSHIPS - CURRENT SYSTEM
+' ============================================================================
+
+' Core Data Types relationships
+StatSystem --> CoreData : uses
+ItemSystem --> CoreData : uses
+PlayerSystem --> CoreData : uses
+EnemySystem --> CoreData : uses
+
+' Stat System relationships
+StatCollection *-- StatEntry : contains
+StatEntry --> StatBonus : uses
+StatEntry --> StatId : references
+StatUiMapper --> StatId : maps
+StatUiMapper --> StatMetaAttribute : uses
+
+' Item System relationships
+ItemData --> BaseStats : has
+ItemData --> AffixEntry : has
+ItemData --> UseEffect : has
+InventoryItem --|> ItemData : extends
+ItemManager --> ItemDatabaseSO : uses
+ItemManager --> ItemData : creates
+WordItem --> ItemData : represents
+
+' Player System relationships
+PlayerManager --> PlayerData : manages
+PlayerData --> StatCollection : has
+PlayerData --> InventoryItem : contains
+PlayerData --> EquipmentData : has
+PlayerControler --> PlayerInput : uses
+PlayerControler --> PlayerStatsManager : uses
+PlayerStatsManager --> PlayerData : reads
+PlayerAttack --> PlayerInput : uses
+PlayerAttack --> PlayerStatsManager : uses
+PlayerInventory --> InventoryItem : manages
+PlayerEquitment --> InventoryItem : manages
+PlayerEquitment --> StatBonus : provides
+InventoryService --> InventoryItem : manages
+
+' Enemy System relationships
+EnemyControler --> EnemyInputAi : uses
+EnemyAttack --> EnemyStats : uses
+EnemyAnimation --> EnemyControler : observes
+EnemyDamageTracker --> EnemyDeathHandler : notifies
+EnemyDeathHandler --> ItemDropManager : uses
+EnemyUI --> EnemyStats : displays
+
+' Combat System relationships
+IDamageable <|.. PlayerStatsManager : implements
+IDamageable <|.. EnemyStats : implements
+PlayerAttack --> DamageContext : creates
+EnemyAttack --> DamageContext : creates
+DamageContext --> DamageSnapshot : creates
+FloatingCombatTextSpawner --> FloatingCombatText : creates
+CombatCalculator --> DamageContext : calculates
+
+' UI System relationships
+UIManager --> InventoryUIManager : manages
+UIManager --> EquipmentUIManager : manages
+InventoryUIManager --> SlotItem : creates
+InventoryUIManager --> PlayerInventory : uses
+EquipmentUIManager --> SlotItem : uses
+SlotItem --> InventoryItem : displays
+InfoItem --> ItemData : displays
+MenuToggleKey --> UIManager : uses
+
+' World System relationships
+ItemDropManager --> ItemData : drops
+ItemDropManager --> DropTable : uses
+DropTable --> DropEntry : contains
+DropEntry --> ItemData : references
+
+' ============================================================================
+' RELATIONSHIPS - FUTURE EXTENSIONS
+' ============================================================================
+
+' Animation System relationships
+AnimationSystem --> PlayerSystem : extends
+AnimationSystem --> EnemySystem : extends
+AnimationSystem --> CombatSystem : extends
+CombatAnimationEvents --> PlayerAttack : listens
+CombatAnimationEvents --> EnemyAttack : listens
+SkillAnimationController --> SkillSystem : uses
+
+' Audio System relationships
+AudioSystem --> CombatSystem : enhances
+AudioSystem --> UISystem : enhances
+CombatAudioHandler --> DamageContext : listens
+UIAudioHandler --> UIManager : listens
+
+' Quest System relationships
+QuestSystem --> PlayerSystem : integrates
+QuestManager --> Quest : manages
+Quest --> QuestObjective : contains
+Quest --> QuestReward : has
+QuestGiver --> Quest : provides
+QuestUI --> QuestManager : displays
+
+' Skill System relationships
+SkillSystem --> PlayerSystem : integrates
+SkillSystem --> CombatSystem : enhances
+SkillManager --> Skill : manages
+SkillManager --> SkillTree : manages
+SkillTree --> SkillNode : contains
+SkillNode --> Skill : represents
+Skill --> SkillEffect : has
+SkillCooldownManager --> Skill : tracks
+
+' Performance System relationships
+PerformanceSystem --> CombatSystem : optimizes
+PerformanceSystem --> EnemySystem : optimizes
+PerformanceSystem --> UISystem : optimizes
+ObjectPoolManager --> ObjectPool : manages
+EffectPooler --> ObjectPool : uses
+EnemyPooler --> ObjectPool : uses
+EffectPooler --> FloatingCombatText : pools
+EnemyPooler --> EnemyControler : pools
+
+@enduml
